@@ -10,22 +10,32 @@ import {
   MAX_PAGE_SIZE,
   MIN_PAGE_SIZE,
 } from "@/constants";
+import { TRPCError } from "@trpc/server";
 
 export const agentsRouter = createTRPCRouter({
   // ✅ Get one agent by ID
   getOne: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const [existingAgent] = await db
-        .select({
-          meetingCount: sql<number>`5`, // Your existing static logic
-          ...getTableColumns(agents),
-        })
-        .from(agents)
-        .where(eq(agents.id, input.id));
+  .input(z.object({ id: z.string() }))
+  .query(async ({ input, ctx }) => {
+    const [existingAgent] = await db
+      .select({
+        meetingCount: sql<number>`5`, // Replace with actual count later
+        ...getTableColumns(agents),
+      })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, input.id),
+          eq(agents.userId, ctx.auth.user.id)
+        )
+      );
+      if(!existingAgent){
+        throw new TRPCError({code :"NOT_FOUND",message: "Agent not found "})
+      }
 
-      return existingAgent;
-    }),
+    return existingAgent;
+  }),
+
 
   // ✅ Get many agents with pagination and search
   getMany: protectedProcedure
