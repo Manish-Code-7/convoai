@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/client";
 import { LoadingState } from "@/components/loading-state";
 import { ErrorState } from "@/components/error-state";
+// import { ResponsiveDialog } from "@/components/responsive-dialog";
+// import { Button } from "@/components/ui/button";
 
 // Loading state component
 export const AgentsViewLoading = () => {
@@ -37,10 +39,17 @@ export const AgentView = () => {
 
   return (
     <div className="p-4">
-      <h2 className="text-xl font-semibold mb-4">Agents</h2>
-      <pre className="bg-gray-100 p-4 rounded text-sm">
-        {JSON.stringify(data, null, 2)}
-      </pre>
-    </div>
+      {/* <ResponsiveDialog 
+          title="Responsive test "
+          description="Responsive description"
+          open
+          onOpenChange={()=>{}}>
+        <Button>
+          Some action
+        </Button>
+      </ResponsiveDialog>  */}
+
+        {JSON.stringify(data, null, 2)}    
+    </div> 
   );
 };
