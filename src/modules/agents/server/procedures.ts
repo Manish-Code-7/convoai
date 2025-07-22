@@ -2,7 +2,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { agents } from "@/db/schema";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
-import { agentsInsertSchema } from "../schemas";
+import { agentsInsertSchema, agentsUpdateSchema } from "../schemas";
 import { and, count, eq, getTableColumns, ilike, sql } from "drizzle-orm";
 import {
   DEFAULT_PAGE,
@@ -13,29 +13,81 @@ import {
 import { TRPCError } from "@trpc/server";
 
 export const agentsRouter = createTRPCRouter({
-  // ✅ Get one agent by ID
-  getOne: protectedProcedure
-  .input(z.object({ id: z.string() }))
-  .query(async ({ input, ctx }) => {
-    const [existingAgent] = await db
-      .select({
-        meetingCount: sql<number>`5`, // Replace with actual count later
-        ...getTableColumns(agents),
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, input.id),
-          eq(agents.userId, ctx.auth.user.id)
+  // ✅ Update agent
+  update: protectedProcedure
+    .input(agentsUpdateSchema)
+    .mutation(async ({ ctx, input }) => {
+      const [updatedAgent] = await db
+        .update(agents)
+        .set(input)
+        .where(
+          and(
+            eq(agents.id, input.id),
+            eq(agents.userId, ctx.auth.user.id)
+          )
         )
-      );
-      if(!existingAgent){
-        throw new TRPCError({code :"NOT_FOUND",message: "Agent not found "})
+        .returning();
+
+      if (!updatedAgent) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Agent not Found",
+        });
       }
 
-    return existingAgent;
-  }),
+      return updatedAgent;
+    }),
 
+  // ✅ Remove agent
+  remove: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const [removedAgent] = await db
+        .delete(agents)
+        .where(
+          and(
+            eq(agents.id, input.id),
+            eq(agents.userId, ctx.auth.user.id)
+          )
+        )
+        .returning();
+
+      if (!removedAgent) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Agent not Found",
+        });
+      }
+
+      return removedAgent;
+    }),
+
+  // ✅ Get one agent by ID
+  getOne: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const [existingAgent] = await db
+        .select({
+          meetingCount: sql<number>`5`,
+          ...getTableColumns(agents),
+        })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, input.id),
+            eq(agents.userId, ctx.auth.user.id)
+          )
+        );
+
+      if (!existingAgent) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Agent not found",
+        });
+      }
+
+      return existingAgent;
+    }),
 
   // ✅ Get many agents with pagination and search
   getMany: protectedProcedure
@@ -60,30 +112,26 @@ export const agentsRouter = createTRPCRouter({
 
       const data = await db
         .select({
-          meetingCount: sql<number>`5`, // Your static meetingCount
+          meetingCount: sql<number>`5`,
           ...getTableColumns(agents),
         })
         .from(agents)
-        .where(
-            and(...whereConditions))
-        .orderBy(agents.createdAt) // ✅ Ordering by createdAt
+        .where(and(...whereConditions))
+        .orderBy(agents.createdAt)
         .limit(pageSize)
         .offset((page - 1) * pageSize);
-        
-        const [total]= await db
-            .select({count: count()})
-            .from(agents)
-            .where(
-                and(...whereConditions
-                )
-            );
 
-        const totalPages = Math.ceil(total.count /pageSize)
+      const [total] = await db
+        .select({ count: count() })
+        .from(agents)
+        .where(and(...whereConditions));
+
+      const totalPages = Math.ceil(total.count / pageSize);
 
       return {
-        items : data,
-        total : total.count,
-        totalPages
+        items: data,
+        total: total.count,
+        totalPages,
       };
     }),
 
