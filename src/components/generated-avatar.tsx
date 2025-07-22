@@ -1,14 +1,12 @@
 import { createAvatar } from "@dicebear/core";
 import { botttsNeutral, initials } from "@dicebear/collection";
-
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 
-// ✅ Fix: Allow both variants in the type
 interface GeneratedAvatarProps {
   seed: string;
   className?: string;
-  variant: "botttsNetural" | "initials";
+  variant: "botttsNeutral" | "initials";
 }
 
 export const GeneratedAvatar = ({
@@ -18,7 +16,7 @@ export const GeneratedAvatar = ({
 }: GeneratedAvatarProps) => {
   let avatar;
 
-  if (variant === "botttsNetural") {
+  if (variant === "botttsNeutral") {
     avatar = createAvatar(botttsNeutral, {
       seed,
     });
