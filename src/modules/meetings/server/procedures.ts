@@ -16,40 +16,39 @@ import { streamVideo } from "@/lib/stream-video";
 import { generateAvatarUri } from "@/lib/avatar";
 
 export const meetingsRouter = createTRPCRouter({
-  generateToken: protectedProcedure.mutation(async ({ctx}) =>{
+  // ✅ Generate Stream Video Token
+  generateToken: protectedProcedure.mutation(async ({ ctx }) => {
     await streamVideo.upsertUsers([
       {
         id: ctx.auth.user.id,
         name: ctx.auth.user.name,
         role: "admin",
-        image: 
+        image:
           ctx.auth.user.image ??
-          generateAvatarUri({seed: ctx.auth.user.name, variant: "initials"}),
-      }
+          generateAvatarUri({ seed: ctx.auth.user.name, variant: "initials" }),
+      },
     ]);
 
-    const expirationTime = Math.floor(Date.now()/1000)+3600;
-    const issuedAt = Math.floor(Date.now()/1000) - 60;
-    
+    const expirationTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+    const issuedAt = Math.floor(Date.now() / 1000) - 60; // 1 min before
+
     const token = streamVideo.generateUserToken({
       user_id: ctx.auth.user.id,
       exp: expirationTime,
-      validity_in_seconds: issuedAt,
+      iat: issuedAt,
+      validity_in_seconds: 3600, // ✅ Fixed: was issuedAt before
     });
 
     return token;
   }),
+
+  // ✅ Remove a meeting
   remove: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [removeMeeting] = await db
         .delete(meetings)
-        .where(
-          and(
-            eq(meetings.id, input.id),
-            eq(meetings.userId, ctx.auth.user.id)
-          )
-        )
+        .where(and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id)))
         .returning();
 
       if (!removeMeeting) {
@@ -62,18 +61,14 @@ export const meetingsRouter = createTRPCRouter({
       return removeMeeting;
     }),
 
+  // ✅ Update a meeting
   update: protectedProcedure
     .input(meetingUpdateSchema)
     .mutation(async ({ ctx, input }) => {
       const [updatedMeeting] = await db
         .update(meetings)
         .set(input)
-        .where(
-          and(
-            eq(meetings.id, input.id),
-            eq(meetings.userId, ctx.auth.user.id)
-          )
-        )
+        .where(and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id)))
         .returning();
 
       if (!updatedMeeting) {
@@ -86,6 +81,7 @@ export const meetingsRouter = createTRPCRouter({
       return updatedMeeting;
     }),
 
+  // ✅ Create a meeting
   create: protectedProcedure
     .input(meetingsInsertSchema)
     .mutation(async ({ input, ctx }) => {
@@ -97,56 +93,58 @@ export const meetingsRouter = createTRPCRouter({
         })
         .returning();
 
-      // TODO: Create Stream Call, Upsert Stream users
-
+      // Create Stream Call
       const call = streamVideo.video.call("default", createdMeeting.id);
       await call.create({
-        data:{
-          created_by_id:ctx.auth.user.id,
-          custom:{
+        data: {
+          created_by_id: ctx.auth.user.id,
+          custom: {
             meetingId: createdMeeting.id,
-            meetingName: createdMeeting.name
+            meetingName: createdMeeting.name,
           },
           settings_override: {
-            transcription:{
-              language:"en",
+            transcription: {
+              language: "en",
               mode: "auto-on",
-              closed_caption_mode:"auto-on"
+              closed_caption_mode: "auto-on",
             },
-            recording:{
-              mode:"auto-on",
-              quality:"1080p"
+            recording: {
+              mode: "auto-on",
+              quality: "1080p",
             },
           },
         },
       });
 
-      const [existingAgnet] = await db
+      // Fetch Agent
+      const [existingAgent] = await db
         .select()
         .from(agents)
-        .where(eq(agents.id,createdMeeting.agentId))
+        .where(eq(agents.id, createdMeeting.agentId));
 
-      if (!existingAgnet) {
-        throw new TRPCError ({
+      if (!existingAgent) {
+        throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Agent not found"
-        })
+          message: "Agent not found",
+        });
       }
+
       await streamVideo.upsertUsers([
         {
-          id: existingAgnet.id,
-          name: existingAgnet.name,
+          id: existingAgent.id,
+          name: existingAgent.name,
           role: "user",
           image: generateAvatarUri({
-            seed: existingAgnet.name,
+            seed: existingAgent.name,
             variant: "botttsNeutral",
           }),
         },
       ]);
-      
+
       return createdMeeting;
     }),
 
+  // ✅ Get one meeting
   getOne: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ input, ctx }) => {
@@ -154,16 +152,13 @@ export const meetingsRouter = createTRPCRouter({
         .select({
           ...getTableColumns(meetings),
           agent: agents,
-          duration: sql<number>`EXTRACT (EPOCH FROM ( ended_at - started_at))`.as("duration"),
+          duration: sql<number>`EXTRACT (EPOCH FROM ( ended_at - started_at))`.as(
+            "duration"
+          ),
         })
         .from(meetings)
         .innerJoin(agents, eq(meetings.agentId, agents.id))
-        .where(
-          and(
-            eq(meetings.id, input.id),
-            eq(meetings.userId, ctx.auth.user.id)
-          )
-        );
+        .where(and(eq(meetings.id, input.id), eq(meetings.userId, ctx.auth.user.id)));
 
       if (!existingMeeting) {
         throw new TRPCError({
@@ -175,6 +170,7 @@ export const meetingsRouter = createTRPCRouter({
       return existingMeeting;
     }),
 
+  // ✅ Get many meetings
   getMany: protectedProcedure
     .input(
       z.object({
@@ -200,19 +196,20 @@ export const meetingsRouter = createTRPCRouter({
     .query(async ({ input, ctx }) => {
       const { search, page, pageSize, status, agentsId } = input;
 
-      // Dynamically create conditions inside the query function
       const conditions = [
         eq(meetings.userId, ctx.auth.user.id),
         search ? ilike(meetings.name, `%${search}%`) : undefined,
         status ? eq(meetings.status, status) : undefined,
         agentsId ? eq(meetings.agentId, agentsId) : undefined,
-      ].filter(Boolean); // remove undefined
+      ].filter(Boolean);
 
       const data = await db
         .select({
           ...getTableColumns(meetings),
           agent: agents,
-          duration: sql<number>`EXTRACT (EPOCH FROM ( ended_at - started_at))`.as("duration"),
+          duration: sql<number>`EXTRACT (EPOCH FROM ( ended_at - started_at))`.as(
+            "duration"
+          ),
         })
         .from(meetings)
         .innerJoin(agents, eq(meetings.agentId, agents.id))
